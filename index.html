@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280">
+<title>Aerial Tactics</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0d0d1a;
+  color: #ddd;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── Screens ─────────────────────────────── */
+.screen {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+#screen-start  { background: #0d0d1a; flex-direction: column; gap: 16px; }
+#screen-game   { display: none; align-items: flex-start; }
+#screen-win    { display: none; background: rgba(0,0,0,0.9); flex-direction: column; gap: 20px; }
+
+/* ── Start screen ───────────────────────── */
+.title { font-size: 56px; color: #FFD700; text-shadow: 0 0 24px #FFD700aa; letter-spacing: 4px; }
+.subtitle { color: #888; font-size: 14px; margin-bottom: 20px; }
+.btn {
+  background: #1a1a2e; color: #ccc; border: 1px solid #444;
+  padding: 12px 32px; font-size: 16px; font-family: inherit;
+  cursor: pointer; border-radius: 3px; transition: all 0.15s;
+  min-width: 240px;
+}
+.btn:hover:not(:disabled) { background: #252540; border-color: #888; color: #fff; }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-primary { border-color: #4a8; color: #6fc; }
+.btn-primary:hover:not(:disabled) { background: #0a2a18; border-color: #6fc; }
+.btn-attack-mode { background: #2a0a0a; border-color: #a44; color: #f88; }
+.btn-attack-mode:hover:not(:disabled) { background: #3a1010; border-color: #f55; }
+.btn-attack-mode.active { background: #500; border-color: #f44; color: #fcc; }
+.btn-end { background: #0a200a; border-color: #3a8a3a; color: #8f8; }
+.btn-end:hover:not(:disabled) { background: #143014; border-color: #6fc; }
+
+/* ── Game layout ────────────────────────── */
+#game-wrap {
+  display: flex; flex-direction: row;
+  width: 1280px; height: 840px;
+}
+#canvas-area { position: relative; flex: 0 0 1080px; height: 840px; }
+#gameCanvas  { display: block; cursor: crosshair; }
+
+/* ── Sidebar ────────────────────────────── */
+#sidebar {
+  flex: 1; background: #0a0a14; border-left: 1px solid #2a2a44;
+  padding: 12px; display: flex; flex-direction: column; gap: 8px;
+  overflow-y: auto;
+}
+.card {
+  background: #111128; border: 1px solid #2a2a44;
+  border-radius: 3px; padding: 10px;
+}
+.card h3 { font-size: 9px; color: #556; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.card .val { font-size: 18px; font-weight: bold; }
+#turn-val { color: #6fc; }
+#ap-val   { color: #FFD700; }
+.hp-row   { font-size: 12px; margin: 2px 0; }
+.hp-a     { color: #6fc; }
+.hp-b     { color: #c6f; }
+#plane-info-body { font-size: 11px; line-height: 1.7; }
+#plane-info-body .lbl { color: #556; }
+#plane-info-body .dat { color: #ddd; }
+#log-body { font-size: 10px; color: #667; max-height: 110px; overflow-y: auto; }
+#log-body div { padding: 1px 0; border-bottom: 1px solid #1a1a2e; }
+#log-body div:first-child { color: #aab; }
+
+/* ── Pass screen ────────────────────────── */
+#pass-screen {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: #050510; display: none; flex-direction: column;
+  align-items: center; justify-content: center; gap: 20px; z-index: 200;
+}
+#pass-screen h2 { font-size: 36px; color: #FFD700; }
+#pass-screen p  { color: #888; font-size: 16px; }
+
+/* ── Win screen ─────────────────────────── */
+#win-title { font-size: 54px; color: #FFD700; text-shadow: 0 0 30px #FFD700; }
+#win-sub   { color: #999; font-size: 18px; }
+</style>
+</head>
+<body>
+
+<!-- START SCREEN -->
+<div class="screen" id="screen-start">
+  <div class="title">AERIAL TACTICS</div>
+  <div class="subtitle">Turn-based aerial combat · two teams · destroy the enemy base</div>
+  <button class="btn btn-primary" id="btn-vs-ai">▶  Play vs AI</button>
+  <button class="btn" id="btn-vs-pvp">⚔  Play vs Player (Hotseat)</button>
+</div>
+
+<!-- PASS DEVICE SCREEN (hotseat) -->
+<div id="pass-screen">
+  <h2>✋ PASS THE DEVICE</h2>
+  <p id="pass-msg">Hand the device to the other player.</p>
+  <button class="btn btn-primary" id="btn-pass-ready">I'm Ready — Start My Turn</button>
+</div>
+
+<!-- GAME SCREEN -->
+<div class="screen" id="screen-game">
+  <div id="game-wrap">
+    <div id="canvas-area">
+      <canvas id="gameCanvas" width="1080" height="840"></canvas>
+    </div>
+    <div id="sidebar">
+      <div class="card">
+        <h3>Turn</h3>
+        <div class="val" id="turn-val">Team A</div>
+        <div style="font-size:10px;color:#445;margin-top:3px" id="turn-num">Turn 1</div>
+      </div>
+      <div class="card">
+        <h3>Action Points</h3>
+        <div class="val" id="ap-val">12 AP</div>
+      </div>
+      <div class="card">
+        <h3>Base HP</h3>
+        <div class="hp-row hp-a">Base A: <span id="base-a-hp">███ 3/3</span></div>
+        <div class="hp-row hp-b">Base B: <span id="base-b-hp">███ 3/3</span></div>
+      </div>
+      <div class="card">
+        <h3>Selected Plane</h3>
+        <div id="plane-info-body" style="color:#445">Nothing selected</div>
+      </div>
+      <div class="card">
+        <h3>Actions</h3>
+        <button class="btn btn-attack-mode" id="btn-atk" style="width:100%;margin-bottom:6px" disabled>⚔ Attack Mode</button>
+        <button class="btn btn-end"         id="btn-end" style="width:100%">End Turn ▶</button>
+      </div>
+      <div class="card" style="flex:1">
+        <h3>Combat Log</h3>
+        <div id="log-body"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WIN SCREEN -->
+<div class="screen" id="screen-win">
+  <div id="win-title">TEAM A WINS!</div>
+  <div id="win-sub">Enemy base destroyed</div>
+  <button class="btn btn-primary" id="btn-again">↩  Back to Start</button>
+</div>
+
+<script>
+"use strict";
+// ═══════════════════════════════════════════════════════════════
+//  TERRAIN MAP  —  18 columns × 14 rows
+//  Edit this array to redesign the battlefield.
+//  0=Normal  1=Red(updraft,free)  2=Blue(downdraft,cost2)
+//  3=Mountain(cost3,blocks LoF)   4=Cloud(cost1,blocks LoF,hides planes)
+//  5=Base A (col 0, row 13)       6=Base B (col 17, row 0)
+// ═══════════════════════════════════════════════════════════════
+const TERRAIN_MAP = [
+//Col: 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17
+/*R0*/ [0, 0, 2, 2, 0, 0, 3, 3, 0, 4, 4, 0, 0, 1, 0, 0, 0, 6],
+/*R1*/ [0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 0, 0, 1, 1, 0, 0, 0],
+/*R2*/ [0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+/*R3*/ [0, 1, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2],
+/*R4*/ [0, 0, 0, 0, 4, 4, 0, 0, 3, 0, 0, 3, 3, 0, 0, 0, 0, 2],
+/*R5*/ [0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0],
+/*R6*/ [0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 4, 4, 0],
+/*R7*/ [0, 0, 0, 3, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 4, 0, 0],
+/*R8*/ [0, 0, 0, 3, 3, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 1, 0, 0],
+/*R9*/ [0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 4, 4, 0, 0, 1, 0, 0],
+/*R10*/[0, 2, 0, 0, 0, 0, 0, 3, 3, 0, 0, 4, 0, 0, 0, 0, 0, 0],
+/*R11*/[0, 2, 2, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 1, 1, 0, 0, 0],
+/*R12*/[0, 0, 2, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+/*R13*/[5, 0, 0, 0, 1, 0, 0, 0, 0, 4, 4, 0, 0, 0, 0, 0, 0, 0],
+];
+
+// ═══════════════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════════════
+const COLS = 18, ROWS = 14, CELL = 60;
+const T = Object.freeze({ NORMAL:0, RED:1, BLUE:2, MOUNTAIN:3, CLOUD:4, BASE_A:5, BASE_B:6 });
+const S = Object.freeze({ GROUND:0, AIR:1, REFUELING:2, DESTROYED:3 }); // plane states
+
+const MOVE_COST = { [T.NORMAL]:1, [T.RED]:0, [T.BLUE]:2, [T.MOUNTAIN]:3, [T.CLOUD]:1, [T.BASE_A]:1, [T.BASE_B]:1 };
+const TERRAIN_COLOR = {
+  [T.NORMAL]:  '#c4bb9e',
+  [T.RED]:     '#d9604a',
+  [T.BLUE]:    '#5080cc',
+  [T.MOUNTAIN]:'#7a5820',
+  [T.CLOUD]:   '#d8d8e8',
+  [T.BASE_A]:  '#1a5030',
+  [T.BASE_B]:  '#40185a',
+};
+
+const AP_MAX       = 12;
+const MAX_AIR_TURNS = 10;  // plane must land by this turn count
+const WARN_FUEL    = 8;    // AI lands at this threshold
+const ATK_AP       = 5;
+const TAKEOFF_AP   = 2;
+const ATK_RANGE    = 5;    // Chebyshev
+const WING_RANGE   = 5;    // Chebyshev winger coverage
+
+// ═══════════════════════════════════════════════════════════════
+//  GAME STATE  (single object G, reset on each new game)
+// ═══════════════════════════════════════════════════════════════
+let G = {};
+
+function newGame(mode) {
+  G = {
+    mode,          // 'ai' | 'pvp'
+    team: 0,       // 0=Team A, 1=Team B
+    turnNum: 1,
+    ap: AP_MAX,
+    baseHP: [3, 3],
+    planes: [],
+    sel: null,     // index of selected plane
+    atkMode: false,
+    validMoves: [],   // [{col,row,apLeft}]
+    validTargets: [], // [{type:'plane'|'base', plane?, col, row, team?}]
+    animQ: [],     // pending attack animation frames
+    gameOver: false,
+    log: [],
+  };
+
+  // Helper to create a plane object
+  const mkPlane = (id, team, type, label, col, row) => ({
+    id, team, type, label, col, row,
+    state: S.GROUND,
+    airTurns: 0,
+    diagHits: 0,
+  });
+
+  let id = 0;
+  // Team A at Base A (0,13)
+  for (let i = 1; i <= 3; i++) G.planes.push(mkPlane(id++, 0, 'lead',   `LA${i}`, 0, 13));
+  for (let i = 1; i <= 3; i++) G.planes.push(mkPlane(id++, 0, 'winger', `WA${i}`, 0, 13));
+  // Team B at Base B (17,0)
+  for (let i = 1; i <= 3; i++) G.planes.push(mkPlane(id++, 1, 'lead',   `LB${i}`, 17, 0));
+  for (let i = 1; i <= 3; i++) G.planes.push(mkPlane(id++, 1, 'winger', `WB${i}`, 17, 0));
+
+  addLog('Game started! Team A goes first.');
+  render();
+  updateUI();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LOGGING
+// ═══════════════════════════════════════════════════════════════
+function addLog(msg) {
+  G.log.unshift(msg);
+  if (G.log.length > 40) G.log.pop();
+  const el = document.getElementById('log-body');
+  el.innerHTML = G.log.slice(0, 18).map(m => `<div>${m}</div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TERRAIN HELPERS
+// ═══════════════════════════════════════════════════════════════
+function ter(col, row) {
+  if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return T.NORMAL;
+  return TERRAIN_MAP[row][col];
+}
+const isMtn   = (c, r) => ter(c, r) === T.MOUNTAIN;
+const isCloud = (c, r) => ter(c, r) === T.CLOUD;
+
+function chebyshev(c1, r1, c2, r2) {
+  return Math.max(Math.abs(c1 - c2), Math.abs(r1 - r2));
+}
+
+// Bresenham's line — returns array of [col,row] cells along the line
+function bLine(c0, r0, c1, r1) {
+  const pts = [];
+  let dc = Math.abs(c1 - c0), dr = Math.abs(r1 - r0);
+  let sc = c0 < c1 ? 1 : -1, sr = r0 < r1 ? 1 : -1;
+  let err = dc - dr, c = c0, r = r0;
+  for (;;) {
+    pts.push([c, r]);
+    if (c === c1 && r === r1) break;
+    const e2 = 2 * err;
+    if (e2 > -dr) { err -= dr; c += sc; }
+    if (e2 <  dc) { err += dc; r += sr; }
+  }
+  return pts;
+}
+
+// True if no mountain or cloud blocks the path between two cells (endpoints excluded)
+function clearLoF(c1, r1, c2, r2) {
+  const pts = bLine(c1, r1, c2, r2);
+  for (let i = 1; i < pts.length - 1; i++) {
+    const t = ter(pts[i][0], pts[i][1]);
+    if (t === T.MOUNTAIN || t === T.CLOUD) return false;
+  }
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MOVEMENT  —  BFS over the grid, cost = terrain MOVE_COST
+// ═══════════════════════════════════════════════════════════════
+function reachableCells(plane, budget) {
+  if (plane.state !== S.AIR) return [];
+
+  // visited[key] = best apLeft seen so far
+  const visited = {};
+  const queue   = [{ col: plane.col, row: plane.row, apLeft: budget }];
+  visited[`${plane.col},${plane.row}`] = budget;
+  const result  = [];
+
+  while (queue.length) {
+    const cur = queue.shift();
+    for (let dc = -1; dc <= 1; dc++) {
+      for (let dr = -1; dr <= 1; dr++) {
+        if (dc === 0 && dr === 0) continue;
+        const nc = cur.col + dc, nr = cur.row + dr;
+        if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+        const t    = ter(nc, nr);
+        const cost = MOVE_COST[t] ?? 1;
+        const rem  = cur.apLeft - cost;
+        if (rem < 0) continue;
+        // Block movement into enemy base tile
+        if (t === T.BASE_A && plane.team === 1) continue;
+        if (t === T.BASE_B && plane.team === 0) continue;
+        const key  = `${nc},${nr}`;
+        if (visited[key] !== undefined && visited[key] >= rem) continue;
+        visited[key] = rem;
+        result.push({ col: nc, row: nr, apLeft: rem });
+        queue.push({ col: nc, row: nr, apLeft: rem });
+      }
+    }
+  }
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ATTACK HELPERS
+// ═══════════════════════════════════════════════════════════════
+function hasCoverage(lead) {
+  return G.planes.some(w =>
+    w.team === lead.team && w.type === 'winger' && w.state === S.AIR &&
+    chebyshev(lead.col, lead.row, w.col, w.row) <= WING_RANGE
+  );
+}
+
+function canAttack(lead) {
+  return lead.type === 'lead' &&
+         lead.state === S.AIR &&
+         G.ap >= ATK_AP &&
+         hasCoverage(lead);
+}
+
+function isStraight(c1, r1, c2, r2) {
+  return c1 === c2 || r1 === r2;
+}
+
+function validTargets(lead) {
+  const enemy = 1 - lead.team;
+  const out   = [];
+
+  // Enemy airborne planes
+  G.planes
+    .filter(p => p.team === enemy && p.state === S.AIR)
+    .forEach(p => {
+      if (isCloud(p.col, p.row)) return;  // hidden
+      if (chebyshev(lead.col, lead.row, p.col, p.row) > ATK_RANGE) return;
+      if (!clearLoF(lead.col, lead.row, p.col, p.row)) return;
+      out.push({ type: 'plane', plane: p, col: p.col, row: p.row });
+    });
+
+  // Enemy base
+  const bc = enemy === 0 ? 0 : 17, br = enemy === 0 ? 13 : 0;
+  if (chebyshev(lead.col, lead.row, bc, br) <= ATK_RANGE &&
+      clearLoF(lead.col, lead.row, bc, br)) {
+    out.push({ type: 'base', team: enemy, col: bc, row: br });
+  }
+
+  return out;
+}
+
+function executeAttack(lead, target) {
+  // Queue attack animation
+  G.animQ.push({ c1: lead.col, r1: lead.row, c2: target.col, r2: target.row, life: 22 });
+  G.ap -= ATK_AP;
+
+  if (target.type === 'base') {
+    G.baseHP[target.team] -= 1;
+    addLog(`${lead.label} bombs Base ${target.team === 0 ? 'A' : 'B'}! (HP→${G.baseHP[target.team]})`);
+    if (G.baseHP[target.team] <= 0) { triggerWin(lead.team); }
+  } else {
+    const p = target.plane;
+    if (isStraight(lead.col, lead.row, p.col, p.row)) {
+      p.state = S.DESTROYED;
+      addLog(`${lead.label} straight-shot ${p.label} ─ DESTROYED!`);
+    } else {
+      p.diagHits++;
+      if (p.diagHits >= 3) {
+        p.state = S.DESTROYED;
+        addLog(`${lead.label} hits ${p.label} (diag ${p.diagHits}/3) ─ DESTROYED!`);
+      } else {
+        addLog(`${lead.label} hits ${p.label} diagonally (${p.diagHits}/3)`);
+      }
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TAKEOFF / LANDING
+// ═══════════════════════════════════════════════════════════════
+function doTakeoff(plane) {
+  plane.state    = S.AIR;
+  plane.airTurns = 0;
+  G.ap -= TAKEOFF_AP;
+  addLog(`${plane.label} takes off!`);
+}
+
+function doLand(plane) {
+  const col = plane.team === 0 ? 0 : 17;
+  const row = plane.team === 0 ? 13 : 0;
+  plane.col   = col;
+  plane.row   = row;
+  plane.state = S.REFUELING;
+  addLog(`${plane.label} lands to refuel.`);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TURN MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+function endTurn() {
+  if (G.gameOver) return;
+
+  // ── Fuel bookkeeping for the team that just finished ──
+  G.planes.forEach(p => {
+    if (p.team !== G.team || p.state === S.DESTROYED) return;
+    if (p.state === S.AIR) {
+      p.airTurns++;
+      if (p.airTurns > MAX_AIR_TURNS) {
+        p.state = S.DESTROYED;
+        addLog(`${p.label} ran out of fuel and CRASHED!`);
+      }
+    } else if (p.state === S.REFUELING) {
+      // One turn spent refueling — now ready
+      p.state    = S.GROUND;
+      p.airTurns = 0;
+      addLog(`${p.label} refueled and ready.`);
+    }
+  });
+
+  // ── Advance turn ──
+  clearSelection();
+  G.team = 1 - G.team;
+  G.ap   = AP_MAX;
+  if (G.team === 0) G.turnNum++;
+
+  addLog(`── Turn ${G.turnNum}: ${G.team === 0 ? 'Team A' : 'Team B'} ──`);
+  render();
+  updateUI();
+
+  if (G.mode === 'pvp') {
+    showPassScreen();
+    return;
+  }
+  if (G.mode === 'ai' && G.team === 1) {
+    document.getElementById('btn-end').disabled = true;
+    setTimeout(runAI, 600);
+  }
+}
+
+function clearSelection() {
+  G.sel         = null;
+  G.atkMode     = false;
+  G.validMoves  = [];
+  G.validTargets= [];
+}
+
+function showPassScreen() {
+  document.getElementById('pass-msg').textContent =
+    `It is now ${G.team === 0 ? 'Team A (Green)' : 'Team B (Purple)'}'s turn.`;
+  document.getElementById('pass-screen').style.display = 'flex';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  WIN
+// ═══════════════════════════════════════════════════════════════
+function triggerWin(winner) {
+  G.gameOver = true;
+  clearSelection();
+  render();
+  document.getElementById('win-title').textContent = `TEAM ${winner === 0 ? 'A' : 'B'} WINS!`;
+  document.getElementById('win-sub').textContent   = `Enemy base destroyed on turn ${G.turnNum}`;
+  document.getElementById('screen-game').style.display = 'none';
+  document.getElementById('screen-win').style.display  = 'flex';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  AI  —  Team B priority logic
+// ═══════════════════════════════════════════════════════════════
+function runAI() {
+  if (G.gameOver) return;
+
+  const myPlanes  = () => G.planes.filter(p => p.team === 1 && p.state !== S.DESTROYED);
+  const airPlanes = () => myPlanes().filter(p => p.state === S.AIR);
+
+  // ── Priority 6: Land planes with ≥ WARN_FUEL air turns ──
+  airPlanes().forEach(p => {
+    if (p.airTurns >= WARN_FUEL && G.ap >= 1) {
+      // Move toward base first if not already there
+      aiMoveToward(p, 17, 0, Math.min(G.ap, 6));
+      if (!G.gameOver) doLand(p);
+    }
+  });
+  if (G.gameOver) { finishAI(); return; }
+
+  // ── Priority 1 & 2: Attack with Leads that have coverage ──
+  for (const lead of airPlanes().filter(p => p.type === 'lead')) {
+    if (G.ap < ATK_AP) break;
+    if (!canAttack(lead)) continue;
+    const targets = validTargets(lead);
+    // Prefer base attack
+    const baseT = targets.find(t => t.type === 'base');
+    if (baseT) {
+      executeAttack(lead, baseT);
+      if (G.gameOver) { finishAI(); return; }
+      continue;
+    }
+    // Attack nearest enemy Lead, then any Winger
+    const enemy = G.planes.filter(p => p.team === 0 && p.state === S.AIR);
+    const tgt =
+      targets.find(t => t.type === 'plane' && t.plane.type === 'lead') ||
+      targets.find(t => t.type === 'plane');
+    if (tgt) {
+      executeAttack(lead, tgt);
+      if (G.gameOver) { finishAI(); return; }
+    }
+  }
+
+  // ── Priority 3: Move Wingers to stay within WING_RANGE of a Lead ──
+  const leads = airPlanes().filter(p => p.type === 'lead');
+  for (const w of airPlanes().filter(p => p.type === 'winger')) {
+    if (G.ap <= 0) break;
+    if (leads.length === 0) break;
+    const nearest = leads.reduce((best, l) =>
+      chebyshev(w.col, w.row, l.col, l.row) < chebyshev(w.col, w.row, best.col, best.row) ? l : best
+    );
+    if (chebyshev(w.col, w.row, nearest.col, nearest.row) > WING_RANGE) {
+      aiMoveToward(w, nearest.col, nearest.row, Math.min(G.ap, 4));
+    }
+  }
+
+  // ── Priority 4: Move Leads toward enemy planes or base ──
+  const aBase = { col: 0, row: 13 };
+  for (const lead of airPlanes().filter(p => p.type === 'lead')) {
+    if (G.ap <= 0) break;
+    const enemies = G.planes.filter(p => p.team === 0 && p.state === S.AIR);
+    let goal = aBase;
+    if (enemies.length > 0) {
+      goal = enemies.reduce((best, e) =>
+        chebyshev(lead.col, lead.row, e.col, e.row) < chebyshev(lead.col, lead.row, best.col, best.row) ? e : best
+      );
+    }
+    aiMoveToward(lead, goal.col, goal.row, Math.min(G.ap, 5));
+  }
+
+  // ── Priority 5: Take off grounded planes ──
+  for (const p of myPlanes().filter(p => p.state === S.GROUND)) {
+    if (G.ap < TAKEOFF_AP) break;
+    doTakeoff(p);
+  }
+
+  finishAI();
+}
+
+// Greedy one-step-at-a-time movement toward (tc,tr), spending up to `budget` AP
+function aiMoveToward(plane, tc, tr, budget) {
+  let ap = Math.min(budget, G.ap);
+  let moved = true;
+  while (moved && ap > 0 && G.ap > 0) {
+    moved = false;
+    let bestScore = -Infinity, bestC = -1, bestR = -1, bestCost = 0;
+    for (let dc = -1; dc <= 1; dc++) {
+      for (let dr = -1; dr <= 1; dr++) {
+        if (dc === 0 && dr === 0) continue;
+        const nc = plane.col + dc, nr = plane.row + dr;
+        if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+        const t    = ter(nc, nr);
+        if (t === T.BASE_A) continue; // don't move into enemy base
+        const cost = MOVE_COST[t] ?? 1;
+        if (cost > ap || cost > G.ap) continue;
+        const dist  = chebyshev(nc, nr, tc, tr);
+        // Prefer cells that reduce distance; bonus for red zones
+        const score = -dist * 10 + (t === T.RED ? 5 : 0);
+        if (score > bestScore) {
+          bestScore = score; bestC = nc; bestR = nr; bestCost = cost;
+        }
+      }
+    }
+    // Only move if it reduces (or matches) distance to target
+    if (bestC >= 0 && chebyshev(bestC, bestR, tc, tr) <= chebyshev(plane.col, plane.row, tc, tr)) {
+      plane.col = bestC; plane.row = bestR;
+      ap -= bestCost; G.ap -= bestCost;
+      moved = true;
+    }
+  }
+}
+
+function finishAI() {
+  G.ap = 0;
+  clearSelection();
+  render();
+  updateUI();
+  if (!G.gameOver) {
+    setTimeout(endTurn, 700);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDERING
+// ═══════════════════════════════════════════════════════════════
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+
+function render() {
+  ctx.clearRect(0, 0, COLS * CELL, ROWS * CELL);
+  drawTerrain();
+  drawHighlights();
+  drawPlanes();
+  drawAttackAnims();
+}
+
+function cx(col) { return col * CELL + CELL / 2; }
+function cy(row) { return row * CELL + CELL / 2; }
+
+function drawTerrain() {
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const t = ter(c, r);
+      ctx.fillStyle = TERRAIN_COLOR[t];
+      ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
+
+      // Grid line
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+      ctx.lineWidth   = 0.5;
+      ctx.strokeRect(c * CELL, r * CELL, CELL, CELL);
+
+      // Terrain icons
+      if (t === T.MOUNTAIN) drawMtn(c, r);
+      else if (t === T.CLOUD) drawCloud(c, r);
+    }
+  }
+
+  // Base labels & HP
+  drawBaseLabel(0, 13, `A`, G.baseHP[0], '#66ffaa');
+  drawBaseLabel(17, 0, `B`, G.baseHP[1], '#cc88ff');
+}
+
+function drawBaseLabel(col, row, name, hp, color) {
+  const x = cx(col), y = cy(row);
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font         = 'bold 11px Courier New';
+  ctx.fillStyle    = color;
+  ctx.fillText(`BASE ${name}`, x, y - 10);
+  ctx.font         = '10px Courier New';
+  ctx.fillText(`HP: ${'█'.repeat(hp)}${'░'.repeat(3 - hp)}`, x, y + 8);
+}
+
+function drawMtn(col, row) {
+  const x = col * CELL, y = row * CELL;
+  ctx.fillStyle = '#4a2e08';
+  ctx.beginPath();
+  ctx.moveTo(x + CELL / 2, y + 7);
+  ctx.lineTo(x + CELL - 7, y + CELL - 7);
+  ctx.lineTo(x + 7,        y + CELL - 7);
+  ctx.closePath();
+  ctx.fill();
+  // Snow cap
+  ctx.fillStyle = '#f0f0f0';
+  ctx.beginPath();
+  ctx.moveTo(x + CELL / 2, y + 7);
+  ctx.lineTo(x + CELL / 2 + 9, y + 22);
+  ctx.lineTo(x + CELL / 2 - 9, y + 22);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawCloud(col, row) {
+  const x = cx(col), y = cy(row);
+  ctx.fillStyle = 'rgba(230,230,255,0.75)';
+  ctx.beginPath(); ctx.arc(x,      y,      15, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x - 13, y + 5,  11, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 13, y + 5,  11, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x,      y + 9,  10, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawHighlights() {
+  // Valid move cells
+  G.validMoves.forEach(m => {
+    ctx.fillStyle   = 'rgba(80,200,100,0.25)';
+    ctx.fillRect(m.col * CELL, m.row * CELL, CELL, CELL);
+    ctx.strokeStyle = 'rgba(80,220,110,0.7)';
+    ctx.lineWidth   = 1.5;
+    ctx.strokeRect(m.col * CELL + 1, m.row * CELL + 1, CELL - 2, CELL - 2);
+  });
+
+  // Valid attack targets
+  G.validTargets.forEach(t => {
+    ctx.fillStyle   = 'rgba(220,50,50,0.28)';
+    ctx.fillRect(t.col * CELL, t.row * CELL, CELL, CELL);
+    ctx.strokeStyle = 'rgba(255,60,60,0.85)';
+    ctx.lineWidth   = 2;
+    ctx.strokeRect(t.col * CELL + 1, t.row * CELL + 1, CELL - 2, CELL - 2);
+  });
+
+  // Selected plane highlight
+  if (G.sel !== null) {
+    const p = G.planes[G.sel];
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth   = 2.5;
+    ctx.strokeRect(p.col * CELL + 2, p.row * CELL + 2, CELL - 4, CELL - 4);
+
+    // Winger coverage lines (for leads)
+    if (p.type === 'lead' && p.state === S.AIR) {
+      G.planes
+        .filter(w => w.team === p.team && w.type === 'winger' && w.state === S.AIR &&
+                     chebyshev(p.col, p.row, w.col, w.row) <= WING_RANGE)
+        .forEach(w => {
+          ctx.strokeStyle = 'rgba(255,220,50,0.35)';
+          ctx.lineWidth   = 1.5;
+          ctx.setLineDash([5, 4]);
+          ctx.beginPath();
+          ctx.moveTo(cx(p.col), cy(p.row));
+          ctx.lineTo(cx(w.col), cy(w.row));
+          ctx.stroke();
+          ctx.setLineDash([]);
+        });
+    }
+  }
+  ctx.lineWidth = 1;
+}
+
+function drawPlanes() {
+  G.planes.filter(p => p.state !== S.DESTROYED).forEach(p => {
+    const x = cx(p.col), y = cy(p.row);
+    const isLead   = p.type === 'lead';
+    const isSel    = G.sel !== null && G.planes[G.sel] === p;
+    const teamClr  = p.team === 0 ? '#55ee88' : '#cc66ff';
+    const darkClr  = p.team === 0 ? '#0a2a14' : '#2a0a3a';
+    const radius   = isLead ? 19 : 15;
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle   = darkClr;
+    ctx.fill();
+    ctx.strokeStyle = isSel ? '#FFD700' : teamClr;
+    ctx.lineWidth   = isSel ? 3 : 1.5;
+    ctx.stroke();
+    ctx.lineWidth = 1;
+
+    // Label
+    ctx.font         = `bold ${isLead ? 10 : 9}px Courier New`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle    = teamClr;
+    ctx.fillText(p.label, x, y);
+
+    // Fuel counter (only in air)
+    if (p.state === S.AIR) {
+      const fuel = MAX_AIR_TURNS - p.airTurns;
+      ctx.font      = '9px Courier New';
+      ctx.fillStyle = fuel <= 3 ? '#ff4444' : fuel <= 5 ? '#ffaa44' : '#aaddaa';
+      ctx.fillText(`⛽${fuel}`, x, y + radius + 8);
+    }
+
+    // Refueling indicator
+    if (p.state === S.REFUELING) {
+      ctx.font      = '10px Courier New';
+      ctx.fillStyle = '#6699ff';
+      ctx.fillText('⟳', x, y + radius + 8);
+    }
+
+    // Diagonal hit counter (small mark top-left)
+    if (p.diagHits > 0) {
+      ctx.font      = '9px Courier New';
+      ctx.fillStyle = '#ff7766';
+      ctx.textAlign = 'left';
+      ctx.fillText(`${p.diagHits}✦`, x - radius, y - radius - 1);
+      ctx.textAlign = 'center';
+    }
+  });
+}
+
+// Attack line animation queue
+function drawAttackAnims() {
+  G.animQ = G.animQ.filter(a => a.life > 0);
+  G.animQ.forEach(a => {
+    const alpha = a.life / 22;
+    ctx.strokeStyle = `rgba(255,80,40,${alpha})`;
+    ctx.lineWidth   = 2.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(cx(a.c1), cy(a.r1));
+    ctx.lineTo(cx(a.c2), cy(a.r2));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1;
+    a.life--;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UI UPDATE
+// ═══════════════════════════════════════════════════════════════
+function updateUI() {
+  const isAI = G.mode === 'ai' && G.team === 1;
+
+  // Turn display
+  const teamStr = G.team === 0 ? 'Team A (Green)' : (isAI ? 'AI — Team B' : 'Team B (Purple)');
+  document.getElementById('turn-val').textContent  = isAI ? '🤖 AI Thinking…' : teamStr;
+  document.getElementById('turn-val').style.color  = G.team === 0 ? '#66ffaa' : '#cc88ff';
+  document.getElementById('turn-num').textContent  = `Turn ${G.turnNum}`;
+
+  // AP
+  document.getElementById('ap-val').textContent = `${G.ap} AP`;
+
+  // Base HP
+  const hpStr = hp => '█'.repeat(Math.max(0, hp)) + '░'.repeat(Math.max(0, 3 - hp)) + ` ${hp}/3`;
+  document.getElementById('base-a-hp').textContent = hpStr(G.baseHP[0]);
+  document.getElementById('base-b-hp').textContent = hpStr(G.baseHP[1]);
+
+  // Plane info
+  const infoEl = document.getElementById('plane-info-body');
+  if (G.sel !== null) {
+    const p      = G.planes[G.sel];
+    const stName = ['On Ground', 'Airborne', 'Refueling', 'Destroyed'][p.state];
+    const fuel   = MAX_AIR_TURNS - p.airTurns;
+    const covStr = p.type === 'lead' ? (hasCoverage(p) ? '✓ YES' : '✗ NO') : 'N/A';
+    infoEl.innerHTML = `
+      <div><span class="lbl">Plane: </span><span class="dat">${p.label}</span></div>
+      <div><span class="lbl">Type:  </span><span class="dat">${p.type}</span></div>
+      <div><span class="lbl">Status:</span><span class="dat">${stName}</span></div>
+      <div><span class="lbl">Fuel:  </span><span class="dat">${p.state === S.AIR ? fuel + '/' + MAX_AIR_TURNS + ' turns' : '—'}</span></div>
+      <div><span class="lbl">Diag:  </span><span class="dat">${p.diagHits}/3 hits</span></div>
+      ${p.type === 'lead' ? `<div><span class="lbl">Cover: </span><span class="dat">${covStr}</span></div>` : ''}
+    `;
+  } else {
+    infoEl.style.color = '#445';
+    infoEl.textContent = 'Nothing selected';
+  }
+
+  // Attack button
+  const atkBtn = document.getElementById('btn-atk');
+  if (!isAI && G.sel !== null && canAttack(G.planes[G.sel])) {
+    atkBtn.disabled = false;
+    atkBtn.classList.toggle('active', G.atkMode);
+    atkBtn.textContent = G.atkMode ? '✕ Cancel Attack' : '⚔ Attack Mode';
+  } else {
+    atkBtn.disabled = true;
+    atkBtn.classList.remove('active');
+    atkBtn.textContent = '⚔ Attack Mode';
+  }
+
+  // End turn button
+  document.getElementById('btn-end').disabled = isAI;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INPUT  —  Canvas click handler
+// ═══════════════════════════════════════════════════════════════
+canvas.addEventListener('click', e => {
+  if (G.gameOver || G.animQ.length > 0) return;
+  if (G.mode === 'ai' && G.team === 1) return; // AI turn
+
+  const rect = canvas.getBoundingClientRect();
+  const col  = Math.floor((e.clientX - rect.left)  / CELL);
+  const row  = Math.floor((e.clientY - rect.top)   / CELL);
+  if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+
+  // ── Attack mode ──
+  if (G.atkMode && G.sel !== null) {
+    const tgt = G.validTargets.find(t => t.col === col && t.row === row);
+    if (tgt) {
+      executeAttack(G.planes[G.sel], tgt);
+      if (!G.gameOver) {
+        G.atkMode      = false;
+        G.validTargets = [];
+        refreshMoves();
+      }
+    } else {
+      G.atkMode      = false;
+      G.validTargets = [];
+      refreshMoves();
+    }
+    updateUI();
+    render();
+    return;
+  }
+
+  // ── Click on a valid move cell ──
+  if (G.sel !== null) {
+    const mv = G.validMoves.find(m => m.col === col && m.row === row);
+    if (mv) {
+      const plane = G.planes[G.sel];
+      plane.col   = col;
+      plane.row   = row;
+      G.ap        = mv.apLeft;
+      addLog(`${plane.label} → (${col},${row}) [${G.ap}AP left]`);
+
+      // Auto-land if moved onto own base
+      const ownBase = plane.team === 0 ? T.BASE_A : T.BASE_B;
+      if (ter(col, row) === ownBase) {
+        doLand(plane);
+        clearSelection();
+      } else {
+        refreshMoves();
+      }
+      updateUI(); render(); return;
+    }
+  }
+
+  // ── Click on a plane ──
+  // Find topmost plane at cell (friendly, not destroyed)
+  const clicked = G.planes.find(p =>
+    p.col === col && p.row === row &&
+    p.team === G.team && p.state !== S.DESTROYED
+  );
+
+  if (clicked) {
+    if (clicked.state === S.GROUND && G.ap >= TAKEOFF_AP) {
+      doTakeoff(clicked);
+      G.sel = G.planes.indexOf(clicked);
+      G.atkMode = false;
+      refreshMoves();
+      updateUI(); render(); return;
+    }
+    if (clicked.state === S.AIR || clicked.state === S.REFUELING) {
+      G.sel     = G.planes.indexOf(clicked);
+      G.atkMode = false;
+      G.validTargets = [];
+      refreshMoves();
+      updateUI(); render(); return;
+    }
+  } else {
+    // Click on empty cell or enemy — deselect
+    clearSelection();
+    updateUI(); render();
+  }
+});
+
+function refreshMoves() {
+  if (G.sel === null) { G.validMoves = []; return; }
+  const p = G.planes[G.sel];
+  G.validMoves = p.state === S.AIR ? reachableCells(p, G.ap) : [];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  BUTTON HANDLERS
+// ═══════════════════════════════════════════════════════════════
+document.getElementById('btn-atk').addEventListener('click', () => {
+  if (G.sel === null) return;
+  const p = G.planes[G.sel];
+  if (!canAttack(p)) return;
+  G.atkMode = !G.atkMode;
+  if (G.atkMode) {
+    G.validTargets = validTargets(p);
+    G.validMoves   = [];
+  } else {
+    G.validTargets = [];
+    refreshMoves();
+  }
+  updateUI();
+  render();
+});
+
+document.getElementById('btn-end').addEventListener('click', () => {
+  if (G.gameOver) return;
+  endTurn();
+});
+
+document.getElementById('btn-pass-ready').addEventListener('click', () => {
+  document.getElementById('pass-screen').style.display = 'none';
+  render();
+  updateUI();
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  SCREEN MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+function showStart() {
+  document.getElementById('screen-start').style.display = 'flex';
+  document.getElementById('screen-game').style.display  = 'none';
+  document.getElementById('screen-win').style.display   = 'none';
+  document.getElementById('pass-screen').style.display  = 'none';
+}
+
+document.getElementById('btn-vs-ai').addEventListener('click', () => {
+  document.getElementById('screen-start').style.display = 'none';
+  document.getElementById('screen-game').style.display  = 'flex';
+  newGame('ai');
+});
+
+document.getElementById('btn-vs-pvp').addEventListener('click', () => {
+  document.getElementById('screen-start').style.display = 'none';
+  document.getElementById('screen-game').style.display  = 'flex';
+  newGame('pvp');
+});
+
+document.getElementById('btn-again').addEventListener('click', showStart);
+
+// ═══════════════════════════════════════════════════════════════
+//  MAIN RENDER LOOP  (for attack animations)
+// ═══════════════════════════════════════════════════════════════
+let lastTime = 0;
+function loop(ts) {
+  if (ts - lastTime > 40 && G.animQ && G.animQ.length > 0) {
+    lastTime = ts;
+    render();
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
