@@ -687,7 +687,7 @@ function drawMtn(c,r) {
 function drawCloud(c,r) {
   const x=cx(c),y=cy(r);
   ctx.fillStyle='rgba(205,205,235,.8)';
-  [[0,0,13],[−12,5,10],[12,5,10],[0,9,9]].forEach(([dx,dy,rad])=>{
+  [[0,0,13],[-12,5,10],[12,5,10],[0,9,9]].forEach(([dx,dy,rad])=>{
     ctx.beginPath();ctx.arc(x+dx,y+dy,rad,0,Math.PI*2);ctx.fill();
   });
 }
